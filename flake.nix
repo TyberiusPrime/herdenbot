@@ -2,7 +2,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs?tag=nixos-22.11-small"; # that's 21.05
     utils.url = "github:numtide/flake-utils";
-    utils.inputs.nixpkgs.follows = "nixpkgs";
     naersk.url = "github:nmattia/naersk";
     naersk.inputs.nixpkgs.follows = "nixpkgs";
     rust-overlay.url = "github:oxalica/rust-overlay";
@@ -40,7 +39,8 @@
       # `nix build`
       packages.my-project = naersk-lib.buildPackage {
         pname = "herdenbot";
-        root = ./.;
+        root = ./herdenbot;
+        buildInputs = da_packages;
       };
       defaultPackage = packages.my-project;
 

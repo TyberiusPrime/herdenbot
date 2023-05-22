@@ -55,6 +55,12 @@ async fn answer(bot: Bot, msg: Message, cmd: BotCommand) -> ResponseResult<()> {
                 .await?;
 
             if output.status.success() {
+                //write current timestamp to /home/herdenbot/last_start.timestamp
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_secs();
+                std::fs::write("/home/herdenbot/last_start.timestamp", timestamp.to_string())?;
                 bot.send_message(msg.chat.id, format!("success")).await?
             } else {
                 let error_message = String::from_utf8_lossy(&output.stderr);

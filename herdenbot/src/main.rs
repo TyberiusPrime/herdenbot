@@ -198,6 +198,10 @@ fn draw_wichtel(
                 out = None;
                 break;
             }
+            if a == b {
+                out = None;
+                break;
+            }
         }
     }
     let out = out.expect("No out?");

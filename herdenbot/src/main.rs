@@ -1,19 +1,47 @@
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::io::Write;
+use std::sync::Arc;
+use std::sync::LazyLock;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use warp::Filter;
 use std::path::PathBuf;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use tokio::process::Command;
 
 static SECRETDATA: OnceCell<serde_json::Value> = OnceCell::new();
 
+
+static DECRYPT_ENABLED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
+
+
+async fn handle_decrypt(bot2: Arc<teloxide::Bot>) -> Result<impl warp::Reply, warp::Rejection> { 
+        let do_decrypt = *DECRYPT_ENABLED.lock().unwrap();
+        let chat_ids = SECRETDATA.get().expect("Unable to get secret data")["wichtel"]
+                .as_object()
+                .expect("Unable to get wichtel chat ids");
+        let chat_id: i64 = chat_ids.get("Flo").expect("No flo?").as_number().expect("No flo in chat id").as_i64().unwrap();
+        let chat_id = teloxide::types::ChatId(chat_id.into());
+        bot2.send_message(chat_id, format!("Decrypt requested. Result was: {do_decrypt}"))
+                        .await.unwrap(); 
+
+        let key = SECRETDATA.get().and_then(|x| x["zfs_keys"].as_object()).and_then(|x| x["sami"].as_str()).expect("No key found").to_string();
+        if do_decrypt {
+      Ok(warp::reply::with_status(key, warp::http::StatusCode::OK))
+    } else {
+        Ok(warp::reply::with_status("Forbidden".to_string(), warp::http::StatusCode::FORBIDDEN))
+    }
+}
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
-    let secret_file = "/secrets/herdenbot/bot.json";
+    //get secret file from env
+    let secret_file = std::env::var("SECRET_FILE").unwrap_or_else(|_| {
+        "/secrets/herdenbot/bot.json".to_string()
+    });
     log::info!("Starting command bot...");
-    let data = std::fs::read_to_string(secret_file)
+    let data = std::fs::read_to_string(&secret_file)
         .expect(&format!("Unable to read file {}", secret_file));
     let data: serde_json::Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
     let token = data["token"]
@@ -23,9 +51,27 @@ async fn main() {
     log::info!("Starting throw dice bot...");
     SECRETDATA.set(data).expect("Unable to set secret data");
 
-    let bot = Bot::new(token);
+    let bot = Arc::new(Bot::new(token));
+    let bot2 = bot.clone();
+    let bot_filter = warp::any().map(move || bot.clone());
+    let hello = warp::path!("sami").and(warp::get()).and(bot_filter).and_then(handle_decrypt);
 
-    BotCommand::repl(bot, answer).await;
+    let http_server = warp::serve(hello).run(([127,0,0,1],51822));
+
+    let j1 = tokio::task::spawn(async {
+        BotCommand::repl(bot2, answer).await;
+    });
+    let j2 = tokio::task::spawn( async {
+        http_server.await;
+    });
+    tokio::spawn(async move {
+    tokio::signal::ctrl_c().await.unwrap();
+        //exit process
+        std::process::exit(0);
+    });
+    j1.await.unwrap();
+    j2.await.unwrap();
+
 
     /* teloxide::repl(bot, |bot: Bot, msg: Message| async move {
         bot.send_dice(msg.chat.id).await?;
@@ -48,9 +94,11 @@ enum BotCommand {
     StopValheim,
     #[command(description = "Weihnachtwichtel auswuerfeln")]
     Wichteln,
+    #[command(description = "Decrypt")]
+    Decrypt,
 }
 
-async fn answer(bot: Bot, msg: Message, cmd: BotCommand) -> ResponseResult<()> {
+async fn answer(bot: Arc<Bot>, msg: Message, cmd: BotCommand) -> ResponseResult<()> {
     log::info!("Received {:?}", msg);
     match cmd {
         BotCommand::Help => {
@@ -162,7 +210,38 @@ async fn answer(bot: Bot, msg: Message, cmd: BotCommand) -> ResponseResult<()> {
                 .await?
             }
         }
+        BotCommand::Decrypt => { 
+let chat_ids = SECRETDATA.get().expect("Unable to get secret data")["wichtel"]
+                .as_object()
+                .expect("Unable to get wichtel chat ids");
+
+            if msg.chat.id.to_string()
+                == format!(
+                    "{}",
+                    chat_ids
+                        .get("Flo")
+                        .expect("No flo?")
+                        .as_number()
+                        .expect("No flo in chat id")
+                ) {
+                *DECRYPT_ENABLED.lock().unwrap() = true;
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    println!("disabling decrypt");
+                    *DECRYPT_ENABLED.lock().unwrap() = false;
+                });
+                bot.send_message(msg.chat.id, format!("Decrypt enabled"))
+                        .await?
+            } else {
+                bot.send_message(
+                    msg.chat.id,
+                    format!("Du bist nicht Florian und darfst das nicht"),
+                )
+                .await?
+            }
+        }
     };
+
 
     Ok(())
 }

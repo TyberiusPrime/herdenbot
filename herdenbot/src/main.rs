@@ -226,7 +226,7 @@ let chat_ids = SECRETDATA.get().expect("Unable to get secret data")["wichtel"]
                 ) {
                 *DECRYPT_ENABLED.lock().unwrap() = true;
                 tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(150)).await;
                     println!("disabling decrypt");
                     *DECRYPT_ENABLED.lock().unwrap() = false;
                 });

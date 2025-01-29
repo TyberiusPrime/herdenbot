@@ -56,7 +56,7 @@ async fn main() {
     let bot_filter = warp::any().map(move || bot.clone());
     let hello = warp::path!("sami").and(warp::get()).and(bot_filter).and_then(handle_decrypt);
 
-    let http_server = warp::serve(hello).run(([127,0,0,1],51822));
+    let http_server = warp::serve(hello).run(([192,168,178,1],51822));
 
     let j1 = tokio::task::spawn(async {
         BotCommand::repl(bot2, answer).await;
